@@ -230,6 +230,24 @@ func hostPortFromFTP(address string)(string,error){
 	return fmt.Sprintf("%d.%d.%d.%d.%d", a, b, c, d, 256 * p1 + p2), nil
 }
 
+func (c *conn) dataConn() (conn io.ReadWriteCloser, err error){
+	switch c.prevCmd{
+	case "PORT":
+		conn, err = net.Dial("tcp", c.dataHostPort)
+		if err != nil{
+			return nil, err
+		}
+	case "PASV":
+		conn, err = c.pasvListener.Accept()
+		if err != nil{
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("Previous command not PASV or Port")
+	}
+	return conn, nil
+}
+
 type logPairs map[string]interface{}
 
 func (c *conn) log(pairs logPairs){
@@ -269,6 +287,58 @@ func (c *conn) Close() error{
 	return err
 }
 
+func (c *conn) list(args []string){
+	var filename string
+	switch len(args){
+	case 0:
+		filename = "."
+	case 1:
+		filename = args[0]
+	default:
+		c.writeln("501 Too many arguments.")
+		return
+	}
+	file, err := os.Open(file)
+	if err != nil{
+		c.writeln("550 File not found.")
+		return
+	}
+	c.writeln("150 Here comes the directory listing.")
+	w, err := c.dataConn()
+	if err != nil{
+		c.writeln("425 Can't open data connection.")
+		return
+	}
+	defer w.Close()
+	stat, err := file.Stat()
+	if err != nil{
+		c.log(logPairs{"cmd":"LIST","err":err})
+		c.writeln("450 Requested file action not taken. File unavailable.")
+	}
+	if stat.IsDir(){
+		filenames, err := file.Readdirnames(0)
+		if err != nil{
+			c.writeln("550 Can't read directory.")
+			return
+		}
+		for _,f := range filenames{
+			_, err = fmt.Fprint(w, f, c.lineEnding())
+			if err != nil{
+				c.log(logPairs{"cmd":"LIST","err":err})
+				c.writeln("426 Connection closed: transfer aborted.")
+				return
+			}
+		}
+	}else{
+		_, err = fmt.Fprint(w, filename, c.lineEnding())
+		if err != nil{
+			c.log(logPairs{"cmd":"LIST","err":err})
+			c.writeln("426 Connction closed: transfer aborted.")
+			return
+		}
+	}
+	c.writeln("226 Closing data connection. List successful.")
+}
 
 func (c *conn) run(){
 	c.writeln("220 Ready.")
