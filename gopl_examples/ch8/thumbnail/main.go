@@ -23,7 +23,7 @@ import (
 	"log"
 	"os"
 
-	"gopl.io/ch8/thumbnail"
+	"Go_Programming/gopl_examples/ch8/thumbnail"
 )
 
 func main() {
