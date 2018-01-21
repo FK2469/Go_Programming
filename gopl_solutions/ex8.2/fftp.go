@@ -170,7 +170,7 @@ Only IPv4 is supported.
 
 DJB's recommendations at http://cr.yp.to/ftp.html have mostly been implemented when noticed and applicable.
 
-TODO: list();pasv();port();retr();stor();stru()
+TODO: pasv();port();stor();
 */
 
 package main
@@ -339,6 +339,68 @@ func (c *conn) list(args []string){
 	}
 	c.writeln("226 Closing data connection. List successful.")
 }
+
+func (c *conn) stru(args []string){
+	if len(args) != 1{
+		c.writeln("501 Usage: STRU F")
+		return
+	}
+	if args[0] != "F"{
+		c.writeln("504 Only file structure is supported.")
+		return
+	}
+	c.writeln("200 STRU set")
+}
+
+func (c *conn) retr(args []string){
+	if len(args) != 1{
+		c.writeln("501 Usage: RETR filename.")
+		return
+	}
+	filename := args[0]
+	file, err := os.Open(filename)
+	if err != nil{
+		c.log(logPairs{"cmd":"RETR", "err":err})
+		c.writeln("550 file not found.")
+		return
+	}
+	c.writeln("150 File OK. Sending.")
+	conn, err := nil{
+		c.writeln("425 Can't open data connection.")
+		return 
+	}
+	defer conn.Close()
+	if c.binary{
+		_, err := io.Copy(conn, file)
+		if err != nil{
+			c.log(logPairs{"cmd":"RETR","err":err})
+			c.writeln("450 File unavailable.")
+			return
+		}
+	} else{
+		// Convert line endings LF -> CRLF.
+		r := bufio.NewReader(file)
+		w := bufio.NewWriter(conn)
+		for {
+			line, isPrefix, err := r.ReadLine()
+			if err != nil{
+				if err != io.EOF {
+					break
+				}
+				c.log(logPairs{"cmd":"RETR", "err":err})
+				c.writeln("450 File unavailable.")
+				return
+			}
+			w.Write(line)
+			if !isPrefix {
+				w.Write([]byte("\r\n"))
+			}
+		}
+		w.Flush()
+	}
+	c.writeln("226 Transfer complete.")
+}
+
 
 func (c *conn) run(){
 	c.writeln("220 Ready.")
