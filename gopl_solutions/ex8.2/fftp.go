@@ -170,7 +170,6 @@ Only IPv4 is supported.
 
 DJB's recommendations at http://cr.yp.to/ftp.html have mostly been implemented when noticed and applicable.
 
-TODO: pasv();port();stor();
 */
 
 package main
@@ -298,7 +297,7 @@ func (c *conn) list(args []string){
 		c.writeln("501 Too many arguments.")
 		return
 	}
-	file, err := os.Open(file)
+	file, err := os.Open(filename)
 	if err != nil{
 		c.writeln("550 File not found.")
 		return
@@ -432,7 +431,65 @@ func (c *conn) type_(args []string){
 		return
 	}
 	c.writeln("200 TYPE set.")
+}
 
+func (c *conn) stor(args []string) {
+	if len(args) != 1 {
+		c.writeln("501 Usage: STOR filename")
+		return
+	}
+	filename := args[0]
+	file, err := os.Create(filename)
+	if err != nil {
+		c.log(logPairs{"cmd": "STOR", "err": err})
+		c.writeln("550 File can't be created.")
+		return
+	}
+	c.writeln("150 Ok to send data.")
+	conn, err := c.dataConn()
+	if err != nil {
+		c.writeln("425 Can't open data connection")
+		return
+	}
+	defer conn.Close()
+	_, err = io.Copy(file, conn)
+	if err != nil {
+		c.log(logPairs{"cmd": "RETR", "err": err})
+		c.writeln("450 File unavailable.")
+		return
+	}
+	c.writeln("226 Transfer complete.")
+}
+
+func (c *conn) pasv(args []string) {
+	if len(args) > 0 {
+		c.writeln("501 Too many arguments.")
+		return
+	}
+	var firstError error
+	storeFirstError := func(err error) {
+		if firstError == nil {
+			firstError = err
+		}
+	}
+	var err error
+	c.pasvListener, err = net.Listen("tcp4", "")
+	storeFirstError(err)
+	_, port, err := net.SplitHostPort(c.pasvListener.Addr().String())
+	storeFirstError(err)
+	ip, _, err := net.SplitHostPort(c.rw.LocalAddr().String())
+	storeFirstError(err)
+	addr, err := hostPortToFTP(fmt.Sprintf("%s:%s", ip, port))
+	storeFirstError(err)
+	if firstError != nil {
+		c.pasvListener.Close()
+		c.pasvListener = nil
+		c.log(logPairs{"cmd": "PASV", "err": err})
+		c.writeln("451 Requested action aborted. Local error in processing.")
+		return
+	}
+	// DJB recommends putting an extra character before the address.
+	c.writeln(fmt.Sprintf("227 =%s", addr))
 }
 
 func (c *conn) run(){
