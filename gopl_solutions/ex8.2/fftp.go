@@ -365,7 +365,8 @@ func (c *conn) retr(args []string){
 		return
 	}
 	c.writeln("150 File OK. Sending.")
-	conn, err := nil{
+	conn, err := c.dataConn()
+	if err != nil{
 		c.writeln("425 Can't open data connection.")
 		return 
 	}
@@ -401,6 +402,38 @@ func (c *conn) retr(args []string){
 	c.writeln("226 Transfer complete.")
 }
 
+func (c *conn) port(args []string){
+	if len(args) != 1{
+		c.writeln("501 Usage: PORT a,b,c,d,p1,p2.")
+		return
+	}
+	var err error
+	c.dataHostPort, err = hostPortFromFTP(args[0])
+	if err != nil{
+		c.log(logPairs{"cmd":"PORT", "err":err})
+		c.writeln("501 Can't parse address.")
+		return
+	}
+	c.writeln("200 PORT command successful.")
+}
+
+func (c *conn) type_(args []string){
+	if len(args) < 1 || len(args) > 2{
+		c.writeln("501 Usage: TYPE takes 1 or 2 arguments.")
+		return
+	}
+	switch strings.ToUpper(strings.Join(args," ")){
+	case "A", "A N":
+		c.binary = false
+	case "I", "L 8":
+		c.binary = true
+	default:
+		c.writeln("504 Unsupported type. Supported types: A, A N, I, L 8.")
+		return
+	}
+	c.writeln("200 TYPE set.")
+
+}
 
 func (c *conn) run(){
 	c.writeln("220 Ready.")
@@ -425,7 +458,7 @@ func (c *conn) run(){
 		case "LIST":
 			c.list(args)
 		case "NOOP":
-			c.writelen("200 Ready.")
+			c.writeln("200 Ready.")
 		case "PASV":
 			c.pasv(args)
 		case "PORT":
