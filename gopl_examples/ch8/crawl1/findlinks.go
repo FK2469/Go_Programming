@@ -16,7 +16,7 @@ import (
 	"log"
 	"os"
 
-	"gopl.io/ch5/links"
+	"Go_Programming/gopl_examples/ch5/links"
 )
 
 //!+crawl
